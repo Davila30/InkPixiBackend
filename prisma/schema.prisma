@@ -1,15 +1,100 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// Esquema de base de datos de InkPixi (PostgreSQL + Prisma)
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // conexión del pooler (la usa la app)
+  directUrl = env("DIRECT_URL") // conexión directa (la usan las migraciones)
+}
+
+// Tipo de guardado de una imagen: marcarla como favorita o guardarla
+enum SaveType {
+  FAVORITE
+  SAVED
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  username     String   @unique
+  passwordHash String
+  fullName     String
+  avatarUrl    String?
+  location     String?
+  createdAt    DateTime @default(now())
+
+  portfolio Portfolio?
+  images    Image[]
+  favorites Favorite[]
+}
+
+// Un usuario tiene como máximo un portfolio (userId @unique => relación 1:1).
+// Las imágenes del portfolio son las imágenes del usuario.
+model Portfolio {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @unique
+  title       String?
+  description String?
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Image {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  title       String
+  description String?
+  url         String
+  publicId    String   @unique // id en Cloudinary, necesario para borrar el fichero
+  price       Decimal? @db.Decimal(10, 2) // null = no está a la venta
+  format      String? // jpg, png... (lo devuelve Cloudinary)
+  width       Int? // px; permite reservar el hueco en la galería
+  height      Int?
+  bytes       Int?
+  uploadedAt  DateTime @default(now())
+
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categories ImageCategory[]
+  favorites  Favorite[]
+
+  @@index([userId])
+  @@index([uploadedAt])
+}
+
+model Category {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  images ImageCategory[]
+}
+
+// Relación N:M entre Image y Category
+model ImageCategory {
+  imageId    Int
+  categoryId Int
+
+  image    Image    @relation(fields: [imageId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([imageId, categoryId])
+  @@index([categoryId])
+}
+
+// Relación N:M entre User e Image. Incluye el tipo de guardado, así que un usuario
+// puede tener la misma imagen como FAVORITE y como SAVED a la vez.
+model Favorite {
+  userId  Int
+  imageId Int
+  type    SaveType
+  savedAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  image Image @relation(fields: [imageId], references: [id], onDelete: Cascade)
+
+  @@id([userId, imageId, type])
+  @@index([imageId])
 }
